@@ -147,6 +147,29 @@ validate_provider() {
         return 1
       fi
       ;;
+    abacus)
+      # Requires wrapper binary and curl (wrapper does HTTP; curl not needed here)
+      if ! command -v gga_abacus_wrapper &> /dev/null; then
+        echo -e "${RED}❌ gga_abacus_wrapper not found${NC}"
+        echo ""
+        echo "Install your Rust wrapper binary (example):"
+        echo " cargo install --path /path/to/gga_abacus_wrapper"
+        echo ""
+        return 1
+      fi
+
+      # Require API key in env (so users get a fast, clear error)
+      if [[ -z "${ABACUS_API_KEY:-}" ]]; then
+        echo -e "${RED}❌ ABACUS_API_KEY not set${NC}"
+        echo ""
+        echo "Set it in your shell (local only):"
+        echo " export ABACUS_API_KEY=\"...\""
+        echo ""
+        return 1
+      fi
+
+      # Model is optional: abacus:route-llm (default route-llm if omitted)
+      ;;
     *)
       echo -e "${RED}❌ Unknown provider: $provider${NC}"
       echo ""
@@ -203,6 +226,13 @@ execute_provider() {
       fi
       execute_lmstudio "$model" "$prompt"
       ;;
+    abacus)
+      local model="${provider#*:}"
+      if [[ "$model" == "$provider" || -z "$model" ]]; then
+        model="route-llm"
+      fi
+      execute_abacus "$model" "$prompt"
+    ;;
     github)
       local model="${provider#*:}"
       execute_github_models "$model" "$prompt"
@@ -213,6 +243,15 @@ execute_provider() {
 # ============================================================================
 # Individual Provider Implementations
 # ============================================================================
+
+execute_abacus() {
+  local model="$1"
+  local prompt="$2"
+
+  # Pass model via env var (recommended) so wrapper stays stdin-based
+  ABACUS_MODEL="$model" printf '%s' "$prompt" | gga_abacus_wrapper 2>&1
+  return "${PIPESTATUS[1]}"
+}
 
 execute_claude() {
   local prompt="$1"
@@ -651,6 +690,13 @@ get_provider_info() {
         echo "LM Studio (model: $model)"
       fi
       ;;
+    abacus)
+      local model="${provider#*:}"
+      if [[ "$model" == "$provider" || -z "$model" ]]; then
+        model="route-llm"
+      fi
+      echo "Abacus RouteLLM (model: $model)"
+    ;;
     github)
       local model="${provider#*:}"
       echo "GitHub Models (model: $model)"
